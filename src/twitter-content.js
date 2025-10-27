@@ -263,6 +263,39 @@ function addWarningIndicator(tweetElement, result) {
     `;
     
     warning.textContent = `${issueType} (${result.confidenceScore}% confidence)`;
+
+    // Show popup alert for hate speech or misinformation
+    if (result.hasHateSpeech || result.hasMisinformation) {
+      const alert = document.createElement('div');
+      const isHate = result.hasHateSpeech;
+      alert.textContent = isHate
+        ? '🚨 Hate Speech Detected!'
+        : '⚠️ Misinformation Detected!';
+      alert.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        background: ${isHate ? '#dc2626' : '#f59e0b'};
+        color: #fff;
+        font-weight: bold;
+        font-size: 1.8rem;
+        padding: 18px 40px;
+        border-radius: 0 0 18px 18px;
+        z-index: 99999;
+        box-shadow: 0 6px 32px rgba(0,0,0,0.22);
+        text-align: center;
+        letter-spacing: 1px;
+        opacity: 1;
+        transition: opacity 0.8s;
+        pointer-events: none;
+      `;
+      document.body.appendChild(alert);
+      setTimeout(() => {
+        alert.style.opacity = '0';
+        setTimeout(() => alert.remove(), 800);
+      }, 5000);
+    }
     
     // Hover effect
     warning.addEventListener('mouseenter', () => {

@@ -9,10 +9,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const response = await chrome.runtime.sendMessage({ action: 'getApiKeyStatus' });
   
   if (response.hasKey) {
-    showStatus('✅ API key is configured', 'success');
-    apiKeyInput.placeholder = '••••••••••••••••••••';
+    showStatus('API key is configured', 'success');
+    apiKeyInput.placeholder = '********************';
   } else {
-    showStatus('⚠️ Please enter your OpenAI API key', 'info');
+    showStatus('Please enter your OpenAI API key', 'info');
   }
   
   // Save API key
@@ -20,12 +20,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const apiKey = apiKeyInput.value.trim();
     
     if (!apiKey) {
-      showStatus('❌ Please enter an API key', 'error');
+      showStatus('Please enter an API key', 'error');
       return;
     }
     
     if (!apiKey.startsWith('sk-')) {
-      showStatus('❌ Invalid API key format', 'error');
+      showStatus('Invalid API key format', 'error');
       return;
     }
     
@@ -39,18 +39,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       
       if (response.success) {
-        showStatus('✅ API key saved successfully!', 'success');
+        showStatus('API key saved successfully!', 'success');
         apiKeyInput.value = '';
-        apiKeyInput.placeholder = '••••••••••••••••••••';
+        apiKeyInput.placeholder = '********************';
         
         setTimeout(() => {
           window.close();
         }, 1500);
       } else {
-        showStatus('❌ Failed to save: ' + response.error, 'error');
+        showStatus('Failed to save: ' + response.error, 'error');
       }
     } catch (error) {
-      showStatus('❌ Error: ' + error.message, 'error');
+      showStatus('Error: ' + error.message, 'error');
     } finally {
       saveBtn.textContent = 'Save API Key';
       saveBtn.disabled = false;

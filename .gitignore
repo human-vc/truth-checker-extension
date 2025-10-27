@@ -4,3 +4,5 @@ node_modules/
 *.log
 config.jsconfig.js
 src/config.js
+config.js
+src/config.js
