@@ -19,16 +19,13 @@
     {
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "js": ["src/twitter-content.js"],
-      "css": ["src/styles.css"]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["src/config.js"],
-      "matches": ["<all_urls>"]
+      "run_at": "document_end"
     }
   ],
   "action": {
     "default_popup": "src/popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

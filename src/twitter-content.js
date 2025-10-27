@@ -167,12 +167,17 @@ async function scanTweets() {
         
         // Send to background script for secure analysis
         const response = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Request timeout after 30s'));
+          }, 30000);
+          
           chrome.runtime.sendMessage(
             { 
               action: 'analyzeText', 
               text: text 
             },
             (response) => {
+              clearTimeout(timeout);
               if (chrome.runtime.lastError) {
                 console.error('❌ Message error:', chrome.runtime.lastError);
                 reject(chrome.runtime.lastError);
@@ -226,7 +231,7 @@ async function scanTweets() {
   }
 }
 
-// Add warning indicator (unchanged)
+// Add warning indicator
 function addWarningIndicator(tweetElement, result) {
   try {
     // Don't add duplicate warnings

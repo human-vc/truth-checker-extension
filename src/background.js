@@ -1,37 +1,57 @@
-// background.js — FINAL GPT-5-nano compatible build for FactGuard
+// background.js – SECURE VERSION - API key stored in Chrome storage
 
 console.log("🚀 FactGuard background service worker started");
 
-let CONFIG = null;
+let CONFIG = {
+  MODEL: 'gpt-4o-mini',
+  TEMPERATURE: 0.2,
+  MAX_TOKENS: 500,
+  DEBUG: true,
+  OPENAI_API_KEY: null
+};
+
 let configLoaded = false;
 
 // ---------------------------
-// Load config.js on startup
+// Load API key from Chrome storage on startup
 // ---------------------------
 (async function loadConfig() {
   try {
-    const res = await fetch(chrome.runtime.getURL("src/config.js"));
-    const text = await res.text();
-    const match = text.match(/const CONFIG\s*=\s*({[\s\S]*?});/);
-
-    if (!match) throw new Error("Could not parse config.js");
-    CONFIG = eval("(" + match[1] + ")");
-    configLoaded = true;
-    console.log("✅ FactGuard config loaded successfully");
+    // Try to get API key from Chrome storage
+    const result = await chrome.storage.local.get(['openai_api_key']);
+    
+    if (result.openai_api_key) {
+      CONFIG.OPENAI_API_KEY = result.openai_api_key;
+      configLoaded = true;
+      console.log("✅ API key loaded from secure storage");
+    } else {
+      console.warn("⚠️ No API key found. Please set it using the extension popup.");
+      configLoaded = true; // Mark as loaded even without key so we can show error
+    }
   } catch (err) {
     console.error("❌ Failed to load config:", err);
+    configLoaded = true;
   }
 })();
 
 // ---------------------------
-// Wait for config readiness
+// Wait for config readiness with better error handling
 // ---------------------------
-async function waitForConfig(timeout = 7000) {
+async function waitForConfig(timeout = 10000) {
   const start = Date.now();
-  while (!configLoaded || !CONFIG?.OPENAI_API_KEY) {
-    if (Date.now() - start > timeout) throw new Error("Config load timeout");
+  while (!configLoaded) {
+    if (Date.now() - start > timeout) {
+      console.error("❌ Config load timeout after", timeout, "ms");
+      throw new Error("Config load timeout");
+    }
     await new Promise(r => setTimeout(r, 100));
   }
+  
+  if (!CONFIG.OPENAI_API_KEY) {
+    throw new Error("API key not configured. Please set it in the extension settings.");
+  }
+  
+  console.log("✅ Config ready, API key present");
 }
 
 // ---------------------------
@@ -42,15 +62,44 @@ function debug(...args) {
 }
 
 // ---------------------------
-// Message listener
+// Message listener - FIXED for service worker lifecycle
 // ---------------------------
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   if (req.action === "analyzeText") {
-    analyzeText(req.text)
-      .then(result => sendResponse({ success: true, result }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
-    return true; // keep channel open
+    // Immediately start the async work and keep the port open
+    (async () => {
+      try {
+        const result = await analyzeText(req.text);
+        sendResponse({ success: true, result });
+      } catch (err) {
+        console.error("❌ Error in message handler:", err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    
+    return true; // CRITICAL: Keep message channel open for async response
   }
+  
+  if (req.action === "setApiKey") {
+    // Save API key to secure storage
+    (async () => {
+      try {
+        await chrome.storage.local.set({ openai_api_key: req.apiKey });
+        CONFIG.OPENAI_API_KEY = req.apiKey;
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+  
+  if (req.action === "getApiKeyStatus") {
+    sendResponse({ hasKey: !!CONFIG.OPENAI_API_KEY });
+    return false;
+  }
+  
+  return false; // Close channel for other message types
 });
 
 // ---------------------------
@@ -80,9 +129,9 @@ async function analyzeText(text) {
         Authorization: `Bearer ${CONFIG.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: CONFIG.MODEL || "gpt-5-nano",
-        temperature: CONFIG.TEMPERATURE ?? 0.2,
-        max_tokens: CONFIG.MAX_TOKENS ?? 500,
+        model: CONFIG.MODEL,
+        temperature: CONFIG.TEMPERATURE,
+        max_tokens: CONFIG.MAX_TOKENS,
         messages: [
           {
             role: "system",
@@ -124,7 +173,7 @@ Do NOT flag political opinions, satire, or jokes.`
     }
 
     const data = await response.json();
-    console.log("✅ GPT-5-nano response received:", data);
+    console.log("✅ GPT-4o-mini response received:", data);
 
     const content = data.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error("Empty API response");
