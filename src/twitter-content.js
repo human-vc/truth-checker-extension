@@ -100,8 +100,70 @@ function getTimeUntilNextRequest() {
   return Math.max(0, 60000 - (now - oldestTimestamp));
 }
 
+// Helper: compute a unique hash for a tweet based on data-testid and textContent
+function computeTweetHash(tweetElement) {
+  // Prefer data-testid and textContent
+  const dataTestId = tweetElement.getAttribute('data-testid') || '';
+  const text = tweetElement.textContent || '';
+  // Simple hash function (djb2)
+  let hash = 5381;
+  let str = dataTestId + '|' + text;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & 0xffffffff; // 32 bit
+  }
+  return hash.toString();
+}
+
+// Helper: reapply stored warnings from sessionStorage to matching tweets in DOM
+function reapplyStoredWarnings() {
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith("factguard_")) {
+        try {
+          const stored = JSON.parse(sessionStorage.getItem(key));
+          if (!stored) continue;
+          // Find tweet in DOM matching this hash
+          // Try all selectors
+          const selectors = [
+            '[data-testid="tweetText"]',
+            'article [lang]',
+            '[data-testid="tweet"]',
+            'article div[lang][dir="auto"]'
+          ];
+          let foundTweet = null;
+          for (const selector of selectors) {
+            const candidates = document.querySelectorAll(selector);
+            for (const el of candidates) {
+              if (computeTweetHash(el) === key.replace("factguard_", "")) {
+                foundTweet = el;
+                break;
+              }
+            }
+            if (foundTweet) break;
+          }
+          if (foundTweet) {
+            // Only add if not present
+            if (!foundTweet.parentElement.querySelector('.factguard-warning')) {
+              addWarningIndicator(foundTweet, stored.result);
+            }
+          }
+        } catch (err) {
+          // Ignore parse errors
+        }
+      }
+    }
+  } catch (err) {
+    // Defensive: ignore all errors
+  }
+}
+
 // Main scanning function - now processes ONE tweet at a time
 async function scanTweets() {
+  // Reapply previous warnings before scanning
+  reapplyStoredWarnings();
+
   // Prevent concurrent scans
   if (RATE_LIMIT.isProcessing) {
     console.log('⏭️ Scan already in progress, skipping...');
@@ -231,7 +293,7 @@ async function scanTweets() {
   }
 }
 
-// Add warning indicator
+// Add warning indicator and persist its state in sessionStorage
 function addWarningIndicator(tweetElement, result) {
   try {
     // Don't add duplicate warnings
@@ -262,15 +324,51 @@ function addWarningIndicator(tweetElement, result) {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     `;
     
-    warning.textContent = `${issueType} (${result.confidenceScore}% confidence)`;
+    const displayConfidence = Math.round(result.confidenceScore * 100);
+    warning.textContent = `${issueType} (${displayConfidence}% confidence)`;
 
-    // Show popup alert for hate speech or misinformation
+    // Extract tweet link (if available)
+    let tweetLink = null;
+    try {
+      const article = tweetElement.closest('article');
+      if (article) {
+        const anchor = article.querySelector('a[href*="/status/"]');
+        if (anchor) tweetLink = "https://twitter.com" + anchor.getAttribute('href');
+      }
+    } catch (err) {
+      console.error("Couldn't extract tweet link:", err);
+    }
+
+    // Persist this warning in sessionStorage
+    try {
+      const hash = computeTweetHash(tweetElement);
+      sessionStorage.setItem(
+        "factguard_" + hash,
+        JSON.stringify({
+          tweetLink: tweetLink,
+          result: result
+        })
+      );
+    } catch (err) {
+      // Defensive: ignore sessionStorage errors
+    }
+
+    // Show popup alert for hate speech or misinformation, including tweet link and sources
     if (result.hasHateSpeech || result.hasMisinformation) {
       const alert = document.createElement('div');
       const isHate = result.hasHateSpeech;
-      alert.textContent = isHate
-        ? '🚨 Hate Speech Detected!'
-        : '⚠️ Misinformation Detected!';
+
+      alert.innerHTML = `
+        <div style="text-align:center;">
+          <strong>${isHate ? '🚨 Hate Speech Detected' : '⚠️ Misinformation Detected'}</strong><br>
+          <span style="font-size:1rem;opacity:0.9;">${result.reasoning || 'AI-flagged content'}</span><br>
+          ${tweetLink ? `<a href="${tweetLink}" target="_blank" style="color:#fff;text-decoration:underline;">View Tweet</a>` : ''}
+          ${result.sources && result.sources.length > 0 ? 
+            `<div style="margin-top:8px;font-size:0.9rem;opacity:0.9;">Source: <a href="${result.sources[0]}" target="_blank" style="color:#fff;text-decoration:underline;">${result.sources[0]}</a></div>` 
+            : ''}
+        </div>
+      `;
+
       alert.style.cssText = `
         position: fixed;
         top: 0;
@@ -279,22 +377,22 @@ function addWarningIndicator(tweetElement, result) {
         background: ${isHate ? '#dc2626' : '#f59e0b'};
         color: #fff;
         font-weight: bold;
-        font-size: 1.8rem;
-        padding: 18px 40px;
+        font-size: 1.4rem;
+        padding: 20px 40px;
         border-radius: 0 0 18px 18px;
         z-index: 99999;
         box-shadow: 0 6px 32px rgba(0,0,0,0.22);
+        max-width: 90%;
         text-align: center;
-        letter-spacing: 1px;
+        letter-spacing: 0.5px;
         opacity: 1;
         transition: opacity 0.8s;
-        pointer-events: none;
       `;
       document.body.appendChild(alert);
       setTimeout(() => {
         alert.style.opacity = '0';
         setTimeout(() => alert.remove(), 800);
-      }, 5000);
+      }, 7000);
     }
     
     // Hover effect
@@ -357,6 +455,7 @@ function showDetailModal(result) {
     const issueColor = result.hasHateSpeech ? '#dc2626' : '#f59e0b';
     const issueIcon = result.hasHateSpeech ? '⚠️' : '⚠️';
     
+    const displayConfidence = Math.round(result.confidenceScore * 100);
     modal.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h2 style="margin: 0 0 8px 0; color: ${issueColor}; font-size: 24px;">
@@ -374,9 +473,9 @@ function showDetailModal(result) {
         <div style="font-weight: 600; margin-bottom: 8px; color: #374151;">Confidence</div>
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="flex: 1; background: #e5e7eb; border-radius: 999px; height: 8px; overflow: hidden;">
-            <div style="background: ${issueColor}; height: 100%; width: ${result.confidenceScore}%; transition: width 0.3s;"></div>
+            <div style="background: ${issueColor}; height: 100%; width: ${displayConfidence}%; transition: width 0.3s;"></div>
           </div>
-          <div style="font-weight: 600; color: ${issueColor};">${result.confidenceScore}%</div>
+          <div style="font-weight: 600; color: ${issueColor};">${displayConfidence}%</div>
         </div>
       </div>
       
