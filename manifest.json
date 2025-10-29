@@ -2,15 +2,17 @@
   "manifest_version": 3,
   "name": "FactGuard",
   "version": "1.0",
-  "description": "Detects misinformation and hate speech on Twitter",
+  "description": "Detects misinformation and hate speech on Twitter, Google Docs, and any selected text",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://twitter.com/*",
     "https://x.com/*",
-    "https://factguard-api.jacobcrainic2008.workers.dev/*"
+    "https://factguard-api.jacobcrainic2008.workers.dev/*",
+    "https://docs.google.com/document/*"
   ],
   "background": {
     "service_worker": "src/background.js"
@@ -20,6 +22,18 @@
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "js": ["src/twitter-content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://docs.google.com/document/*"],
+      "js": ["src/docs-content.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/general-content.js"],
+      "run_at": "document_end",
+      "all_frames": false
     }
   ],
   "action": {
