@@ -1,1 +1,1 @@
-Welcome to FactGusrd!!
+Welcome to FactGuard!!
